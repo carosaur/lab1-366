@@ -2,6 +2,9 @@
 # The malicious shellcode is stored in environment
 # variable: EGG.
 
+# Step 0: Make repo if dne
+mkdir .bcvs
+touch /.bcvs/block.list
 
 # Step 1: Establish EGG with shellcode.
 touch egg.py
